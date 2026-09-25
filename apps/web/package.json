@@ -1,0 +1,48 @@
+{
+    "name": "@resolve/web",
+    "private": true,
+    "scripts": {
+        "dev": "next dev --hostname 127.0.0.1 --port 3000",
+        "build": "next build",
+        "start": "next start --hostname 127.0.0.1 --port 3000",
+        "typecheck": "next typegen && tsc --noEmit",
+        "db:validate": "prisma validate",
+        "predb:seed": "prisma generate",
+        "db:seed": "prisma db seed",
+        "db:seed-auth": "node --conditions=react-server --env-file=.env prisma/seed-auth.ts",
+        "test:auth": "node --conditions=react-server --env-file=.env --test scripts/auth.integration.test.ts",
+        "test:workspaces": "node --conditions=react-server --env-file=.env --test scripts/workspaces.integration.test.ts",
+        "test:tickets": "node --conditions=react-server --env-file=.env --test scripts/ticket-access.integration.test.ts",
+        "test:e2e": "node --conditions=react-server --env-file=.env ../../node_modules/@playwright/test/cli.js test",
+        "test:customers": "node --conditions=react-server --env-file=.env --test scripts/customer-intake.integration.test.ts",
+        "test:articles": "node --conditions=react-server --env-file=.env --test scripts/articles.integration.test.ts",
+        "test:invitations": "node --conditions=react-server --env-file=.env --test scripts/invitations.integration.test.ts",
+        "pretypecheck": "prisma generate",
+        "prebuild": "prisma generate",
+        "db:status": "prisma migrate status",
+        "db:migrate": "prisma migrate dev",
+        "db:check": "node --conditions=react-server --env-file=.env scripts/check-database.ts",
+        "db:explain-tickets": "node --conditions=react-server --env-file=.env scripts/explain-ticket-inbox.ts",
+        "db:generate": "prisma generate",
+        "db:deploy": "prisma migrate deploy"
+    },
+    "dependencies": {
+        "@better-auth/prisma-adapter": "1.7.5",
+        "@prisma/adapter-mariadb": "^7.10.0",
+        "@prisma/client": "^7.10.0",
+        "better-auth": "1.7.5",
+        "dotenv": "^17.4.2",
+        "next": "^16.3.5",
+        "react": "^19.3.0",
+        "react-dom": "^19.3.0",
+        "server-only": "^0.0.1"
+    },
+    "devDependencies": {
+        "@playwright/test": "^1.63.0",
+        "@types/node": "^24.13.4",
+        "@types/react": "^19.3.0",
+        "@types/react-dom": "^19.3.0",
+        "prisma": "^7.10.0",
+        "typescript": "^7.0.2"
+    }
+}

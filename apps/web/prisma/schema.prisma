@@ -1,0 +1,264 @@
+generator client {
+  provider            = "prisma-client"
+  output              = "../generated/prisma"
+  importFileExtension = "ts"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+enum MembershipRole {
+  OWNER
+  ADMIN
+  AGENT
+}
+
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+}
+
+enum TicketMessageKind {
+  PUBLIC_REPLY
+  INTERNAL_NOTE
+}
+
+enum TicketPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum TicketChangeField {
+  STATUS
+  PRIORITY
+  ASSIGNEE
+}
+
+enum ArticleStatus {
+  DRAFT
+  PUBLISHED
+}
+
+model User {
+  id              Int          @id @default(autoincrement())
+  email           String       @unique @db.VarChar(254)
+  name            String       @db.VarChar(100)
+  emailVerified   Boolean      @default(false)
+  image           String?      @db.Text
+  createdAt       DateTime     @default(now()) @db.DateTime(3)
+  updatedAt       DateTime     @updatedAt @db.DateTime(3)
+  memberships     Membership[]
+  sessions        Session[]
+  accounts        Account[]
+  sentInvitations Invitation[]
+  ticketMessages TicketMessage[]
+  assignedTickets Ticket[] @relation("TicketAssignee")
+  ticketChanges TicketChange[]
+  customerAccesses CustomerAccess[]
+  customerInvitations CustomerInvitation[] @relation("CustomerInvitationSender")
+  customerTickets Ticket[] @relation("TicketCustomer")
+  createdArticles HelpArticle[] @relation("ArticleCreator")
+  updatedArticles HelpArticle[] @relation("ArticleEditor")
+}
+
+model Session {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  token     String   @unique @db.VarChar(191)
+  expiresAt DateTime @db.DateTime(3)
+  createdAt DateTime @default(now()) @db.DateTime(3)
+  updatedAt DateTime @updatedAt @db.DateTime(3)
+  ipAddress String?  @db.VarChar(191)
+  userAgent String?  @db.Text
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Account {
+  id                    Int       @id @default(autoincrement())
+  userId                Int
+  accountId             String    @db.VarChar(191)
+  providerId            String    @db.VarChar(191)
+  password              String?   @db.Text
+  accessToken           String?   @db.Text
+  refreshToken          String?   @db.Text
+  idToken               String?   @db.Text
+  accessTokenExpiresAt  DateTime? @db.DateTime(3)
+  refreshTokenExpiresAt DateTime? @db.DateTime(3)
+  scope                 String?   @db.Text
+  createdAt             DateTime  @default(now()) @db.DateTime(3)
+  updatedAt             DateTime  @updatedAt @db.DateTime(3)
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, accountId])
+  @@index([userId])
+}
+
+model Verification {
+  id         Int      @id @default(autoincrement())
+  identifier String   @db.VarChar(191)
+  value      String   @db.Text
+  expiresAt  DateTime @db.DateTime(3)
+  createdAt  DateTime @default(now()) @db.DateTime(3)
+  updatedAt  DateTime @updatedAt @db.DateTime(3)
+
+  @@index([identifier])
+}
+
+model Workspace {
+  id          Int          @id @default(autoincrement())
+  name        String       @db.VarChar(100)
+  createdAt   DateTime     @default(now()) @db.DateTime(3)
+  updatedAt   DateTime     @updatedAt @db.DateTime(3)
+  memberships Membership[]
+  tickets     Ticket[]
+  invitations Invitation[]
+  customerAccesses CustomerAccess[]
+  customerInvitations CustomerInvitation[]
+  articles    HelpArticle[]
+}
+
+model HelpArticle {
+  id          Int           @id @default(autoincrement())
+  workspaceId Int
+  title       String        @db.VarChar(200)
+  body        String        @db.MediumText
+  status      ArticleStatus @default(DRAFT)
+  version     Int           @default(0)
+  createdById Int
+  updatedById Int
+  publishedAt DateTime?     @db.DateTime(3)
+  createdAt   DateTime      @default(now()) @db.DateTime(3)
+  updatedAt   DateTime      @updatedAt @db.DateTime(3)
+  workspace   Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  createdBy   User         @relation("ArticleCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  updatedBy   User         @relation("ArticleEditor", fields: [updatedById], references: [id], onDelete: Restrict)
+
+  @@index([workspaceId, status, updatedAt, id])
+  @@fulltext([title, body], map: "HelpArticle_title_body_fulltext")
+  @@index([createdById])
+  @@index([updatedById])
+}
+
+// Customer access is not staff membership. A customer can only submit tickets
+// through the dedicated endpoint; Step 5.2 will add own-ticket reading.
+model CustomerAccess {
+  id          Int       @id @default(autoincrement())
+  workspaceId Int
+  userId      Int
+  createdAt   DateTime  @default(now()) @db.DateTime(3)
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@unique([workspaceId, userId])
+  @@index([userId])
+}
+
+model CustomerInvitation {
+  id          Int       @id @default(autoincrement())
+  workspaceId Int
+  invitedById Int
+  email       String    @db.VarChar(254)
+  tokenHash   String    @unique @db.Char(64)
+  expiresAt   DateTime  @db.DateTime(3)
+  acceptedAt  DateTime? @db.DateTime(3)
+  createdAt   DateTime  @default(now()) @db.DateTime(3)
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  invitedBy   User      @relation("CustomerInvitationSender", fields: [invitedById], references: [id], onDelete: Restrict)
+
+  @@index([workspaceId, email])
+  @@index([invitedById])
+}
+
+model Invitation {
+  id          Int            @id @default(autoincrement())
+  workspaceId Int
+  invitedById Int
+  email       String         @db.VarChar(254)
+  role        MembershipRole
+  tokenHash   String         @unique @db.Char(64)
+  expiresAt   DateTime       @db.DateTime(3)
+  acceptedAt  DateTime?      @db.DateTime(3)
+  createdAt   DateTime       @default(now()) @db.DateTime(3)
+  workspace   Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  invitedBy   User           @relation(fields: [invitedById], references: [id], onDelete: Restrict)
+
+  @@index([workspaceId, email])
+  @@index([invitedById])
+}
+
+model Membership {
+  id          Int            @id @default(autoincrement())
+  userId      Int
+  workspaceId Int
+  role        MembershipRole
+  createdAt   DateTime       @default(now()) @db.DateTime(3)
+  updatedAt   DateTime       @updatedAt @db.DateTime(3)
+  user        User           @relation(fields: [userId], references: [id], onDelete: Restrict)
+  workspace   Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+
+  @@unique([workspaceId, userId])
+  @@index([userId])
+}
+
+model Ticket {
+  id          Int          @id @default(autoincrement())
+  workspaceId Int
+  subject     String       @db.VarChar(200)
+  description String       @db.Text
+  status      TicketStatus @default(OPEN)
+  priority    TicketPriority @default(NORMAL)
+  assigneeId  Int?
+  customerId  Int?
+  version     Int          @default(0)
+  createdAt   DateTime     @default(now()) @db.DateTime(3)
+  updatedAt   DateTime     @updatedAt @db.DateTime(3)
+  workspace   Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  messages    TicketMessage[]
+  assignee    User?        @relation("TicketAssignee", fields: [assigneeId], references: [id], onDelete: Restrict)
+  customer    User?        @relation("TicketCustomer", fields: [customerId], references: [id], onDelete: Restrict)
+  changes     TicketChange[]
+
+  @@index([workspaceId])
+  @@index([assigneeId])
+  @@index([workspaceId, customerId, createdAt, id])
+  @@index([workspaceId, createdAt, id])
+  @@index([workspaceId, status, createdAt, id])
+}
+
+// Append-only through the application. Tenant scope comes from the ticket.
+model TicketChange {
+  id        Int               @id @default(autoincrement())
+  ticketId  Int
+  actorId   Int
+  version   Int
+  field     TicketChangeField
+  before    String?           @db.VarChar(191)
+  after     String?           @db.VarChar(191)
+  createdAt DateTime          @default(now()) @db.DateTime(3)
+  ticket    Ticket            @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  actor     User              @relation(fields: [actorId], references: [id], onDelete: Restrict)
+
+  @@unique([ticketId, version, field])
+  @@index([actorId])
+}
+
+// Workspace ownership is inherited from the parent ticket.
+model TicketMessage {
+  id        Int               @id @default(autoincrement())
+  ticketId  Int
+  authorId  Int
+  kind      TicketMessageKind
+  body      String            @db.Text
+  createdAt DateTime          @default(now()) @db.DateTime(3)
+  ticket    Ticket            @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  author    User              @relation(fields: [authorId], references: [id], onDelete: Restrict)
+
+  @@index([ticketId, createdAt, id])
+  @@index([authorId])
+}
