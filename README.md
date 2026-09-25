@@ -11,7 +11,7 @@ A multi-tenant customer support application built with Next.js, React, TypeScrip
 - Workspace help articles with drafts, publication, stale-edit protection, and ranked MySQL full-text search.
 - Server-side workspace permission checks and automated API and browser tests.
 
-AI assistance is planned but is not implemented. The current application runs locally: protected application APIs intentionally require a loopback MySQL connection to `resolve_dev` outside production mode. Invitations are shared manually; no email is sent. Deployment support is not yet implemented.
+This project is complete at its current local-demo scope. AI assistance, email notifications, and deployment support are not included. Protected application APIs intentionally require a loopback MySQL connection to `resolve_dev` outside production mode. Invitations are shared manually; no email is sent.
 
 ## Local setup
 
@@ -45,6 +45,48 @@ Requirements: Node.js 24, npm 11, and MySQL 8.0. Google Chrome is required for t
 
 Open <http://127.0.0.1:3000/sign-in> and sign in as `alice@example.test` with the `DEV_SEED_PASSWORD` you configured. Auth seeding preserves existing credentials on repeated runs. On Windows PowerShell, use `npm.cmd` if script execution policy blocks `npm.ps1`.
 
+## Local background worker
+
+The initial background task is an infrastructure check with no customer data. It runs independently of the web server. Docker Desktop must be running to use the supplied Redis service; MySQL remains the application database.
+
+From the repository root, start Redis:
+
+```sh
+docker compose -f compose.redis.yaml up -d --wait
+```
+
+Set `REDIS_URL=redis://127.0.0.1:6379/0` in `apps/web/.env`. `BULLMQ_PREFIX` defaults to `resolve-local`; the producer, status command, and worker must use the same prefix and Redis database. Queue commands are restricted to local Redis outside production mode.
+
+Submit a job before starting the worker:
+
+```sh
+npm run queue:add --workspace=@resolve/web
+npm run queue:status --workspace=@resolve/web -- JOB_ID
+```
+
+Replace `JOB_ID` with the returned ID. It stays `waiting` until a worker runs. Start the worker in a separate terminal:
+
+```sh
+npm run worker --workspace=@resolve/web
+```
+
+Run the status command again to see `completed` and its receipt. Stop the worker with Ctrl+C. The latest 100 completed and 100 failed jobs are retained, with older records removed as jobs finish. There is no web endpoint for these infrastructure commands.
+
+To exercise retry handling, use an operation key and a diagnostic mode:
+
+```sh
+npm run queue:add --workspace=@resolve/web -- retry-demo transient
+npm run queue:status --workspace=@resolve/web -- check-retry-demo
+npm run queue:add --workspace=@resolve/web -- failure-demo always-fail
+npm run queue:failed --workspace=@resolve/web
+```
+
+`success` is the default mode. `transient` fails once and then succeeds; `always-fail` exhausts three total attempts. Retries use exponential backoff starting at one second. Status includes attempt counts, the last failure, timing metadata, and the result. The failed command lists up to 20 retained failures.
+
+Reusing an operation key returns the same retained job without replacing its data or restarting it. Use a new key for a new diagnostic run. This protection ends when the job is removed. The check processor is side-effect-free and returns a stable receipt on re-execution; this is not an exactly-once guarantee for future email delivery or database writes.
+
+The Compose service publishes Redis on loopback only and stores its append-only data in a Docker volume. Stop it with `docker compose -f compose.redis.yaml stop`; starting it again reuses that volume. This is a local Redis setup, not containerization of the application.
+
 ## Verification
 
 Type checking and production compilation:
@@ -66,6 +108,14 @@ npm run test:tickets --workspace=@resolve/web
 npm run test:customers --workspace=@resolve/web
 npm run test:articles --workspace=@resolve/web
 ```
+
+With local Redis running, the queue test needs neither the web server nor MySQL:
+
+```sh
+npm run test:queue --workspace=@resolve/web
+```
+
+It uses a unique queue prefix, starts and stops a worker process, and removes only its own Redis fixtures.
 
 Run browser journeys with Chrome installed:
 
